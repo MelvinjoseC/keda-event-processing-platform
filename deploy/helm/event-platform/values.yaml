@@ -1,0 +1,136 @@
+nameOverride: ""
+fullnameOverride: ""
+
+imagePullSecrets: []
+commonLabels: {}
+
+queue:
+  name: events
+  exchange: events
+  routingKey: events.created
+  deadLetterExchange: events.dlx
+  deadLetterQueue: events.dead
+  deadLetterRoutingKey: events.dead
+
+secrets:
+  create: true
+  existingName: ""
+  rabbitmqUrl: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podSecurityContext:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+topologySpreadConstraints:
+  enabled: true
+
+publisher:
+  replicaCount: 2
+  image:
+    repository: ghcr.io/your-org/keda-event-publisher
+    tag: "dev"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  env: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  pdb:
+    enabled: true
+    minAvailable: 1
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+worker:
+  replicaCount: 0
+  image:
+    repository: ghcr.io/your-org/keda-event-worker
+    tag: "dev"
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 80
+  env:
+    PROCESS_SECONDS: "0.15"
+    PREFETCH_COUNT: "10"
+    MAX_RETRIES: "3"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  keda:
+    enabled: true
+    pollingInterval: 10
+    cooldownPeriod: 120
+    minReplicaCount: 0
+    maxReplicaCount: 50
+    queueLength: "25"
+    activationValue: "1"
+    fallback:
+      enabled: true
+      failureThreshold: 3
+      replicas: 2
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+monitoring:
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s
+    labels:
+      release: kube-prometheus-stack
+
+networkPolicy:
+  enabled: false
+
+rabbitmq:
+  enabled: true
+  replicaCount: 3
+  auth:
+    username: platform
+    password: change-me
+    erlangCookie: change-me
+  persistence:
+    enabled: true
+    size: 20Gi
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 2Gi
+  metrics:
+    enabled: true
+  pdb:
+    create: true
+    minAvailable: 2
+  extraConfiguration: |-
+    consumer_timeout = 3600000

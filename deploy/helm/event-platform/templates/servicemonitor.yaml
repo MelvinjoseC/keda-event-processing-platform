@@ -1,0 +1,37 @@
+{{- if .Values.monitoring.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "event-platform.componentName" (dict "root" . "component" "publisher") }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.serviceMonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "event-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: publisher
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "event-platform.componentName" (dict "root" . "component" "worker") }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    {{- toYaml .Values.monitoring.serviceMonitor.labels | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "event-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.monitoring.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.monitoring.serviceMonitor.scrapeTimeout }}
+{{- end }}

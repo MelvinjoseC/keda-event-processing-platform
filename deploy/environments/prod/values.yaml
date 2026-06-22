@@ -1,0 +1,43 @@
+publisher:
+  image:
+    repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/event-platform-prod-publisher
+    tag: replace-with-git-sha
+  replicaCount: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+worker:
+  image:
+    repository: 000000000000.dkr.ecr.us-east-1.amazonaws.com/event-platform-prod-worker
+    tag: replace-with-git-sha
+  keda:
+    minReplicaCount: 0
+    maxReplicaCount: 100
+    queueLength: "25"
+    activationValue: "1"
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+
+secrets:
+  create: false
+  existingName: event-platform-rabbitmq-connection
+
+rabbitmq:
+  replicaCount: 3
+  auth:
+    username: platform
+    existingPasswordSecret: event-platform-rabbitmq-auth
+    existingErlangSecret: event-platform-rabbitmq-auth
+  persistence:
+    enabled: true
+    size: 100Gi

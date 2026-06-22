@@ -1,0 +1,28 @@
+publisher:
+  image:
+    repository: keda-event-publisher
+    tag: local
+    pullPolicy: IfNotPresent
+
+worker:
+  image:
+    repository: keda-event-worker
+    tag: local
+    pullPolicy: IfNotPresent
+  keda:
+    maxReplicaCount: 10
+
+rabbitmq:
+  replicaCount: 1
+  auth:
+    username: platform
+    password: platform
+    erlangCookie: local-cookie
+  persistence:
+    enabled: false
+  pdb:
+    create: false
+
+secrets:
+  create: true
+  rabbitmqUrl: amqp://platform:platform@event-platform-rabbitmq:5672/

@@ -1,0 +1,11 @@
+apiVersion: v2
+name: event-platform
+description: Production-ready event processing platform with FastAPI, RabbitMQ, and KEDA.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: rabbitmq
+    version: "16.0.14"
+    repository: "https://charts.bitnami.com/bitnami"
+    condition: rabbitmq.enabled

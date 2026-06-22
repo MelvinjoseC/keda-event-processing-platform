@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-platform-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  event-platform.json: |-
+    {
+      "annotations": {
+        "list": []
+      },
+      "editable": true,
+      "fiscalYearStartMonth": 0,
+      "graphTooltip": 0,
+      "id": null,
+      "links": [],
+      "liveNow": false,
+      "panels": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "eps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 0
+          },
+          "id": 1,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(publisher_events_published_total{namespace=\"event-platform\"}[5m])) by (event_type)",
+              "legendFormat": "published {{event_type}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(worker_events_processed_total{namespace=\"event-platform\"}[5m])) by (event_type)",
+              "legendFormat": "processed {{event_type}}",
+              "refId": "B"
+            }
+          ],
+          "title": "Event Throughput",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 0
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"event-platform\", queue=\"events\"})",
+              "legendFormat": "ready messages",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(kube_deployment_status_replicas{namespace=\"event-platform\", deployment=~\".*worker.*\"})",
+              "legendFormat": "worker replicas",
+              "refId": "B"
+            }
+          ],
+          "title": "Queue Depth and Workers",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 8
+          },
+          "id": 3,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.95, sum(rate(worker_processing_seconds_bucket{namespace=\"event-platform\"}[5m])) by (le, event_type))",
+              "legendFormat": "p95 {{event_type}}",
+              "refId": "A"
+            }
+          ],
+          "title": "Worker Processing Latency",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "eps"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 8
+          },
+          "id": 4,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(rate(worker_events_retried_total{namespace=\"event-platform\"}[5m])) by (event_type)",
+              "legendFormat": "retried {{event_type}}",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(rate(worker_events_failed_total{namespace=\"event-platform\"}[5m])) by (event_type)",
+              "legendFormat": "failed {{event_type}}",
+              "refId": "B"
+            }
+          ],
+          "title": "Retries and Dead Letters",
+          "type": "timeseries"
+        }
+      ],
+      "refresh": "30s",
+      "schemaVersion": 39,
+      "tags": [
+        "event-platform",
+        "keda",
+        "rabbitmq"
+      ],
+      "templating": {
+        "list": []
+      },
+      "time": {
+        "from": "now-6h",
+        "to": "now"
+      },
+      "timepicker": {},
+      "timezone": "utc",
+      "title": "Event Platform",
+      "uid": "event-platform",
+      "version": 1,
+      "weekStart": ""
+    }

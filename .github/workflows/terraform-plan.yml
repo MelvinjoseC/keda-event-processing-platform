@@ -1,0 +1,34 @@
+name: terraform-plan
+
+on:
+  pull_request:
+    paths:
+      - infra/terraform/**
+      - .github/workflows/terraform-plan.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_PLAN_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Terraform plan
+        working-directory: infra/terraform/aws
+        run: |
+          terraform init
+          terraform fmt -check -recursive
+          terraform validate
+          terraform plan -out=tfplan

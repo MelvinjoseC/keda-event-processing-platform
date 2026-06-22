@@ -1,0 +1,15 @@
+{{- if and .Values.publisher.pdb.enabled (gt (int .Values.publisher.replicaCount) 1) -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "event-platform.componentName" (dict "root" . "component" "publisher") }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: publisher
+spec:
+  minAvailable: {{ .Values.publisher.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "event-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: publisher
+{{- end }}

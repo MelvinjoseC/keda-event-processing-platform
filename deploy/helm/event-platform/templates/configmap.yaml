@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "event-platform.fullname" . }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+data:
+  QUEUE_NAME: {{ .Values.queue.name | quote }}
+  EXCHANGE_NAME: {{ .Values.queue.exchange | quote }}
+  ROUTING_KEY: {{ .Values.queue.routingKey | quote }}
+  DEAD_LETTER_EXCHANGE: {{ .Values.queue.deadLetterExchange | quote }}
+  DEAD_LETTER_QUEUE: {{ .Values.queue.deadLetterQueue | quote }}
+  DEAD_LETTER_ROUTING_KEY: {{ .Values.queue.deadLetterRoutingKey | quote }}

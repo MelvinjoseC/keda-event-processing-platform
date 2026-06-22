@@ -1,0 +1,10 @@
+Publisher service:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "event-platform.componentName" (dict "root" . "component" "publisher") }} 8000:{{ .Values.publisher.service.port }}
+
+Publish a test event:
+  curl -X POST http://127.0.0.1:8000/events \
+    -H 'content-type: application/json' \
+    -d '{"type":"order.created","payload":{"order_id":"demo-1"}}'
+
+KEDA worker scaler:
+  kubectl -n {{ .Release.Namespace }} get scaledobject {{ include "event-platform.componentName" (dict "root" . "component" "worker") }}

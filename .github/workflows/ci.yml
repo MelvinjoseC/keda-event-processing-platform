@@ -1,0 +1,80 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: python-${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - publisher
+          - worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/${{ matrix.service }}/requirements*.txt
+      - name: Install dependencies
+        working-directory: services/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run tests
+        working-directory: services/${{ matrix.service }}
+        run: pytest -q
+
+  docker:
+    name: docker-${{ matrix.service }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - publisher
+          - worker
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        run: docker build -t event-platform-${{ matrix.service }}:${{ github.sha }} services/${{ matrix.service }}
+
+  helm:
+    name: helm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: |
+          helm dependency build deploy/helm/event-platform
+          helm lint deploy/helm/event-platform -f deploy/environments/local/values.yaml
+          helm template event-platform deploy/helm/event-platform -f deploy/environments/local/values.yaml >/tmp/event-platform.yaml
+
+  terraform:
+    name: terraform-validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Validate AWS layer
+        working-directory: infra/terraform/aws
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate
+      - name: Validate bootstrap layer
+        working-directory: infra/terraform/bootstrap
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false
+          terraform validate

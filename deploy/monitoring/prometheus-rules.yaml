@@ -1,0 +1,35 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: event-platform
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: event-platform.rules
+      rules:
+        - alert: EventPlatformPublisherUnavailable
+          expr: sum(kube_deployment_status_replicas_unavailable{namespace="event-platform", deployment=~".*publisher.*"}) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Event publisher has unavailable replicas
+            description: At least one publisher replica has been unavailable for more than 5 minutes.
+        - alert: EventPlatformWorkerFailures
+          expr: sum(rate(worker_events_failed_total{namespace="event-platform"}[5m])) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Worker is dead-lettering events
+            description: Events are exhausting retries and being rejected to the dead letter queue.
+        - alert: EventPlatformQueueBacklog
+          expr: sum(rabbitmq_queue_messages_ready{namespace="event-platform", queue="events"}) > 1000
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: Event queue backlog is high
+            description: RabbitMQ queue depth has stayed above 1000 ready messages for more than 10 minutes.

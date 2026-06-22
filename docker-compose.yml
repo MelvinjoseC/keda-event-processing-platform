@@ -1,0 +1,55 @@
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-platform}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-platform}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+  publisher:
+    build:
+      context: ./services/publisher
+    ports:
+      - "8000:8000"
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://platform:platform@rabbitmq:5672/}
+      QUEUE_NAME: ${QUEUE_NAME:-events}
+      EXCHANGE_NAME: ${EXCHANGE_NAME:-events}
+      ROUTING_KEY: ${ROUTING_KEY:-events.created}
+      DEAD_LETTER_EXCHANGE: ${DEAD_LETTER_EXCHANGE:-events.dlx}
+      DEAD_LETTER_QUEUE: ${DEAD_LETTER_QUEUE:-events.dead}
+      DEAD_LETTER_ROUTING_KEY: ${DEAD_LETTER_ROUTING_KEY:-events.dead}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: ./services/worker
+    ports:
+      - "8001:8000"
+    environment:
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://platform:platform@rabbitmq:5672/}
+      QUEUE_NAME: ${QUEUE_NAME:-events}
+      EXCHANGE_NAME: ${EXCHANGE_NAME:-events}
+      ROUTING_KEY: ${ROUTING_KEY:-events.created}
+      DEAD_LETTER_EXCHANGE: ${DEAD_LETTER_EXCHANGE:-events.dlx}
+      DEAD_LETTER_QUEUE: ${DEAD_LETTER_QUEUE:-events.dead}
+      DEAD_LETTER_ROUTING_KEY: ${DEAD_LETTER_ROUTING_KEY:-events.dead}
+      PROCESS_SECONDS: ${PROCESS_SECONDS:-0.15}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  rabbitmq-data:

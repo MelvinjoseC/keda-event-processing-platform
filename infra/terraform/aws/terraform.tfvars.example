@@ -1,0 +1,17 @@
+project     = "event-platform"
+environment = "prod"
+aws_region  = "us-east-1"
+
+# Restrict this to your VPN, office, or CI egress CIDRs before production use.
+endpoint_public_access       = true
+endpoint_public_access_cidrs = ["203.0.113.0/24"]
+
+# One NAT gateway per AZ is more available. Use true for lower-cost non-production clusters.
+single_nat_gateway = false
+
+# EKS Auto Mode lets idle event-worker capacity disappear after KEDA scales replicas to zero.
+enable_eks_auto_mode = true
+
+github_actions_role_enabled = true
+github_org                  = "your-org"
+github_repo                 = "keda-event-platform"

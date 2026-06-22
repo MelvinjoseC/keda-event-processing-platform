@@ -1,0 +1,4 @@
+aws_region   = "us-east-1"
+cluster_name = "event-platform-prod"
+
+grafana_admin_password = "replace-me"

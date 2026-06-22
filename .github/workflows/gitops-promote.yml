@@ -1,0 +1,35 @@
+name: gitops-promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag to promote into deploy/environments/prod/values.yaml.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Update image tags
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          perl -0pi -e 's/tag: .*/tag: $ENV{"IMAGE_TAG"}/g' deploy/environments/prod/values.yaml
+          git diff -- deploy/environments/prod/values.yaml
+      - name: Commit promotion
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deploy/environments/prod/values.yaml
+          git commit -m "chore(gitops): promote $IMAGE_TAG"
+          git push
