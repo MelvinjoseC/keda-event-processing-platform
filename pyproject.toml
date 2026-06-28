@@ -1,0 +1,30 @@
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "F",    # Pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "S",    # flake8-bandit
+    "B",    # flake8-bugbear
+    "A",    # flake8-builtins
+    "C4",   # flake8-comprehensions
+    "T20",  # flake8-print
+    "RET",  # flake8-return
+    "SIM",  # flake8-simplify
+    "ARG",  # flake8-unused-arguments
+    "PTH",  # flake8-usepathlib
+    "ERA",  # emulate eradicate (detects commented-out code)
+    "PL",   # Pylint
+    "RUF",  # Ruff-specific rules
+]
+ignore = [
+    "S101", # Allow assert statements in tests
+]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

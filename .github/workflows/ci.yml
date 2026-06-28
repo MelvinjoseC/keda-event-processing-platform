@@ -10,6 +10,21 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: python-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Ruff
+        run: pip install ruff
+      - name: Run Ruff check
+        run: ruff check .
+      - name: Run Ruff format check
+        run: ruff format --check .
+
   python:
     name: python-${{ matrix.service }}
     runs-on: ubuntu-latest

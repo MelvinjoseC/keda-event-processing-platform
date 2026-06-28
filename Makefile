@@ -1,4 +1,4 @@
-.PHONY: local-up local-down test cost-report helm-template tf-fmt
+.PHONY: local-up local-down test cost-report helm-template tf-fmt lint format
 
 local-up:
 	docker compose up --build
@@ -8,6 +8,12 @@ local-down:
 
 test:
 	python -m compileall services scripts
+
+lint:
+	ruff check .
+
+format:
+	ruff format .
 
 cost-report:
 	python scripts/cost_compare.py --output reports/cost-comparison.md
