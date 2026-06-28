@@ -27,6 +27,8 @@ ignore = [
     "E501", # Line too long
     "T201", # Print statements
     "S311", # Pseudo-random generators (unsafe for crypto but fine for tests/scripts)
+    "PLR2004", # Magic values in comparisons (like HTTP status codes in tests)
+    "ARG001", # Unused function arguments (common for injecting pytest fixtures)
 ]
 
 [tool.ruff.lint.isort]

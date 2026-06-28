@@ -1,9 +1,9 @@
 import json
 from unittest.mock import AsyncMock, patch
-import pytest
-from fastapi.testclient import TestClient
 
+import pytest
 from app.main import app
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture(autouse=True)
