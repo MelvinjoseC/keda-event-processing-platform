@@ -12,7 +12,6 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from pydantic import BaseModel, Field
 from starlette.responses import Response
 
-
 SERVICE_NAME = os.getenv("SERVICE_NAME", "event-publisher")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "events")

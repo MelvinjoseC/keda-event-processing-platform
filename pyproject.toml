@@ -24,6 +24,9 @@ select = [
 ]
 ignore = [
     "S101", # Allow assert statements in tests
+    "E501", # Line too long
+    "T201", # Print statements
+    "S311", # Pseudo-random generators (unsafe for crypto but fine for tests/scripts)
 ]
 
 [tool.ruff.lint.isort]

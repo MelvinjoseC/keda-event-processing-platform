@@ -2,15 +2,20 @@ import asyncio
 import json
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 import aio_pika
 from aio_pika import DeliveryMode, ExchangeType, Message
 from fastapi import FastAPI, HTTPException, status
-from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    Counter,
+    Gauge,
+    Histogram,
+    generate_latest,
+)
 from starlette.responses import Response
-
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "event-worker")
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
@@ -173,10 +178,8 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         task.cancel()
-        try:
+        with suppress(asyncio.CancelledError):
             await task
-        except asyncio.CancelledError:
-            pass
 
         channel = getattr(app.state, "channel", None)
         connection = getattr(app.state, "connection", None)

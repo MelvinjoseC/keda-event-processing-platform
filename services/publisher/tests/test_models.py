@@ -1,7 +1,6 @@
 import pytest
-from pydantic import ValidationError
-
 from app.main import EventIn
+from pydantic import ValidationError
 
 
 def test_event_payload_defaults_to_empty_dict():

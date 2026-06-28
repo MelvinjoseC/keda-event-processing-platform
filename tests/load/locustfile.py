@@ -3,7 +3,6 @@ import uuid
 
 from locust import HttpUser, between, task
 
-
 EVENT_TYPES = [
     "order.created",
     "order.paid",

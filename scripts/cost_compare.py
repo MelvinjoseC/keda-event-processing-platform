@@ -36,10 +36,7 @@ def calculate(inputs: CostInputs) -> dict[str, float]:
         baseline_nodes * inputs.node_hourly_price * inputs.monthly_hours
     )
     keda_worker_compute = (
-        active_nodes
-        * inputs.node_hourly_price
-        * inputs.monthly_hours
-        * active_fraction
+        active_nodes * inputs.node_hourly_price * inputs.monthly_hours * active_fraction
     )
     control_plane = inputs.eks_control_plane_hourly * inputs.monthly_hours
     savings = baseline_worker_compute - keda_worker_compute
@@ -121,7 +118,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--worker-memory-request-gib", type=float, default=0.5)
     parser.add_argument("--node-allocatable-cpu", type=float, default=1.8)
     parser.add_argument("--node-allocatable-memory-gib", type=float, default=6.8)
-    parser.add_argument("--output", type=Path, default=Path("reports/cost-comparison.md"))
+    parser.add_argument(
+        "--output", type=Path, default=Path("reports/cost-comparison.md")
+    )
     return parser.parse_args()
 
 
