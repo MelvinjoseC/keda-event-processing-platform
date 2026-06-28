@@ -230,6 +230,7 @@ async def lifespan(app: FastAPI):
     logger.info("Starting event worker service...")
     app.state.consumer_ready = False
     task = asyncio.create_task(consume(app))
+    app.state.consumer_task = task
     try:
         yield
     finally:
@@ -263,6 +264,22 @@ async def healthz() -> dict[str, str]:
 
 @app.get("/readyz", include_in_schema=False)
 async def readyz() -> dict[str, str]:
+    task = getattr(app.state, "consumer_task", None)
+    if task is not None and task.done():
+        try:
+            exc = task.exception()
+            if exc:
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Consumer background task failed: {exc}",
+                )
+        except asyncio.CancelledError:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Consumer background task terminated unexpectedly",
+        )
+
     connection = getattr(app.state, "connection", None)
     if not getattr(app.state, "consumer_ready", False):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
