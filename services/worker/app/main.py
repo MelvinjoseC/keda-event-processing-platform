@@ -37,6 +37,11 @@ PROCESS_SECONDS = float(os.getenv("PROCESS_SECONDS", "0.15"))
 PREFETCH_COUNT = int(os.getenv("PREFETCH_COUNT", "10"))
 MAX_RETRIES = int(os.getenv("MAX_RETRIES", "3"))
 
+RETRY_EXCHANGE = os.getenv("RETRY_EXCHANGE", "events.retry.dx")
+RETRY_QUEUE = os.getenv("RETRY_QUEUE", "events.retry")
+RETRY_ROUTING_KEY = os.getenv("RETRY_ROUTING_KEY", "events.retry")
+RETRY_DELAY_MS = int(os.getenv("RETRY_DELAY_MS", "10000"))
+
 PROCESSED_EVENTS = Counter(
     "worker_events_processed_total",
     "Events successfully processed by the worker",
@@ -85,6 +90,24 @@ async def declare_topology(channel: aio_pika.RobustChannel) -> aio_pika.RobustQu
         ExchangeType.DIRECT,
         durable=True,
     )
+
+    # Declare Retry DLX and Retry Queue with TTL pointing back to the main exchange
+    retry_dlx = await channel.declare_exchange(
+        RETRY_EXCHANGE,
+        ExchangeType.DIRECT,
+        durable=True,
+    )
+    retry_queue = await channel.declare_queue(
+        RETRY_QUEUE,
+        durable=True,
+        arguments={
+            "x-dead-letter-exchange": EXCHANGE_NAME,
+            "x-dead-letter-routing-key": ROUTING_KEY,
+            "x-message-ttl": RETRY_DELAY_MS,
+        },
+    )
+    await retry_queue.bind(retry_dlx, routing_key=RETRY_ROUTING_KEY)
+
     queue = await channel.declare_queue(
         QUEUE_NAME,
         durable=True,
@@ -107,12 +130,12 @@ async def process_event(event: dict[str, Any]) -> None:
 
 
 async def republish_for_retry(
-    exchange: aio_pika.RobustExchange,
+    retry_exchange: aio_pika.RobustExchange,
     original: aio_pika.IncomingMessage,
     retry_count: int,
 ) -> None:
     logger.info(
-        "Republishing message %s for retry %d/%d",
+        "Republishing message %s to retry exchange (%d/%d)",
         original.message_id,
         retry_count,
         MAX_RETRIES,
@@ -120,7 +143,7 @@ async def republish_for_retry(
     headers = dict(original.headers or {})
     headers["x-retry-count"] = retry_count
 
-    await exchange.publish(
+    await retry_exchange.publish(
         Message(
             body=original.body,
             content_type=original.content_type,
@@ -130,13 +153,13 @@ async def republish_for_retry(
             timestamp=int(time.time()),
             headers=headers,
         ),
-        routing_key=ROUTING_KEY,
+        routing_key=RETRY_ROUTING_KEY,
     )
 
 
 async def handle_message(
     message: aio_pika.IncomingMessage,
-    exchange: aio_pika.RobustExchange,
+    retry_exchange: aio_pika.RobustExchange,
 ) -> None:
     retry_count = int((message.headers or {}).get("x-retry-count", 0))
     event_type = "unknown"
@@ -167,7 +190,7 @@ async def handle_message(
                 duration,
                 exc,
             )
-            await republish_for_retry(exchange, message, retry_count + 1)
+            await republish_for_retry(retry_exchange, message, retry_count + 1)
             await message.ack()
             RETRIED_EVENTS.labels(event_type=event_type).inc()
         else:
@@ -209,16 +232,18 @@ async def consume(app: FastAPI) -> None:
         channel = await connection.channel()
         await channel.set_qos(prefetch_count=PREFETCH_COUNT)
         queue = await declare_topology(channel)
-        exchange = await channel.get_exchange(EXCHANGE_NAME)
+        retry_exchange = await channel.get_exchange(RETRY_EXCHANGE)
 
         app.state.connection = connection
         app.state.channel = channel
         app.state.consumer_ready = True
-        logger.info("RabbitMQ consumer connected, topology declared, starting message loop")
+        logger.info(
+            "RabbitMQ consumer connected, topology declared, starting message loop"
+        )
 
         async with queue.iterator() as iterator:
             async for message in iterator:
-                await handle_message(message, exchange)
+                await handle_message(message, retry_exchange)
     except Exception as exc:
         logger.exception("Fatal error in consumer background task: %s", exc)
         app.state.consumer_ready = False

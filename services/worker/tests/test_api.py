@@ -156,9 +156,11 @@ def test_handle_message_retry_trigger(mock_rabbitmq):
         message.reject.assert_not_called()
         exchange.publish.assert_called_once()
 
-        # Verify published retry headers
-        published_msg = exchange.publish.call_args[0][0]
+        # Verify published retry headers and routing key
+        publish_args = exchange.publish.call_args
+        published_msg = publish_args[0][0]
         assert published_msg.headers["x-retry-count"] == 1
+        assert publish_args[1].get("routing_key") == "events.retry"
 
     asyncio.run(run())
 
