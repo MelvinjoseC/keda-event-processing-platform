@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import time
 import uuid
@@ -13,6 +14,13 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "event-publisher")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(SERVICE_NAME)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "events")
 EXCHANGE_NAME = os.getenv("EXCHANGE_NAME", "events")
@@ -76,6 +84,7 @@ async def declare_topology(channel: aio_pika.RobustChannel) -> aio_pika.RobustEx
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting event publisher service...")
     connection = await aio_pika.connect_robust(
         RABBITMQ_URL,
         client_properties={"connection_name": SERVICE_NAME},
@@ -87,12 +96,18 @@ async def lifespan(app: FastAPI):
     app.state.connection = connection
     app.state.channel = channel
     app.state.exchange = exchange
+    logger.info("Connected to RabbitMQ and declared event topology")
 
     try:
         yield
+    except Exception as exc:
+        logger.exception("Exception occurred during service runtime: %s", exc)
+        raise
     finally:
+        logger.info("Shutting down event publisher service...")
         await channel.close()
         await connection.close()
+        logger.info("RabbitMQ connections closed successfully")
 
 
 app = FastAPI(
@@ -142,6 +157,9 @@ async def publish_event(event: EventIn) -> EventAccepted:
     exchange = getattr(app.state, "exchange", None)
     if exchange is None:
         PUBLISH_ERRORS.inc()
+        logger.error(
+            "Failed to publish event %s: RabbitMQ exchange is not ready", event_id
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="RabbitMQ exchange is not ready",
@@ -152,12 +170,21 @@ async def publish_event(event: EventIn) -> EventAccepted:
             await exchange.publish(message, routing_key=ROUTING_KEY)
     except Exception as exc:
         PUBLISH_ERRORS.inc()
+        logger.exception(
+            "Failed to publish event %s of type %s to RabbitMQ", event_id, event.type
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Failed to publish event",
         ) from exc
 
     PUBLISHED_EVENTS.labels(event_type=event.type).inc()
+    logger.info(
+        "Published event: id=%s, type=%s, correlation_id=%s",
+        event_id,
+        event.type,
+        body["correlation_id"],
+    )
     return EventAccepted(
         id=event_id,
         status="accepted",
