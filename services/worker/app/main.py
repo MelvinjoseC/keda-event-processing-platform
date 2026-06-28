@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import os
 import time
 from contextlib import asynccontextmanager, suppress
@@ -18,6 +19,13 @@ from prometheus_client import (
 from starlette.responses import Response
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "event-worker")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(SERVICE_NAME)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "events")
 EXCHANGE_NAME = os.getenv("EXCHANGE_NAME", "events")
@@ -103,6 +111,12 @@ async def republish_for_retry(
     original: aio_pika.IncomingMessage,
     retry_count: int,
 ) -> None:
+    logger.info(
+        "Republishing message %s for retry %d/%d",
+        original.message_id,
+        retry_count,
+        MAX_RETRIES,
+    )
     headers = dict(original.headers or {})
     headers["x-retry-count"] = retry_count
 
@@ -126,24 +140,58 @@ async def handle_message(
 ) -> None:
     retry_count = int((message.headers or {}).get("x-retry-count", 0))
     event_type = "unknown"
+    event_id = message.message_id or "unknown"
 
     INFLIGHT_MESSAGES.inc()
     started = time.perf_counter()
     try:
         event = decode_event(message.body)
         event_type = event["type"]
+        event_id = event["id"]
+        logger.info(
+            "Processing event: id=%s, type=%s, correlation_id=%s, attempt=%d",
+            event_id,
+            event_type,
+            event.get("correlation_id"),
+            retry_count + 1,
+        )
         await process_event(event)
-    except Exception:
+    except Exception as exc:
+        duration = time.perf_counter() - started
         if retry_count < MAX_RETRIES:
+            logger.warning(
+                "Error processing event %s of type %s on attempt %d (took %.3fs). Retrying... Error: %r",
+                event_id,
+                event_type,
+                retry_count + 1,
+                duration,
+                exc,
+            )
             await republish_for_retry(exchange, message, retry_count + 1)
             await message.ack()
             RETRIED_EVENTS.labels(event_type=event_type).inc()
         else:
+            logger.error(
+                "Error processing event %s of type %s. Retries exhausted (%d/%d). Rejecting to DLQ. Error: %s",
+                event_id,
+                event_type,
+                retry_count,
+                MAX_RETRIES,
+                exc,
+                exc_info=True,
+            )
             await message.reject(requeue=False)
             FAILED_EVENTS.labels(event_type=event_type).inc()
     else:
+        duration = time.perf_counter() - started
         await message.ack()
         PROCESSED_EVENTS.labels(event_type=event_type).inc()
+        logger.info(
+            "Successfully processed event %s of type %s (took %.3fs)",
+            event_id,
+            event_type,
+            duration,
+        )
     finally:
         PROCESSING_LATENCY.labels(event_type=event_type).observe(
             time.perf_counter() - started
@@ -152,31 +200,40 @@ async def handle_message(
 
 
 async def consume(app: FastAPI) -> None:
-    connection = await aio_pika.connect_robust(
-        RABBITMQ_URL,
-        client_properties={"connection_name": SERVICE_NAME},
-    )
-    channel = await connection.channel()
-    await channel.set_qos(prefetch_count=PREFETCH_COUNT)
-    queue = await declare_topology(channel)
-    exchange = await channel.get_exchange(EXCHANGE_NAME)
+    logger.info("Starting background RabbitMQ consumer task...")
+    try:
+        connection = await aio_pika.connect_robust(
+            RABBITMQ_URL,
+            client_properties={"connection_name": SERVICE_NAME},
+        )
+        channel = await connection.channel()
+        await channel.set_qos(prefetch_count=PREFETCH_COUNT)
+        queue = await declare_topology(channel)
+        exchange = await channel.get_exchange(EXCHANGE_NAME)
 
-    app.state.connection = connection
-    app.state.channel = channel
-    app.state.consumer_ready = True
+        app.state.connection = connection
+        app.state.channel = channel
+        app.state.consumer_ready = True
+        logger.info("RabbitMQ consumer connected, topology declared, starting message loop")
 
-    async with queue.iterator() as iterator:
-        async for message in iterator:
-            await handle_message(message, exchange)
+        async with queue.iterator() as iterator:
+            async for message in iterator:
+                await handle_message(message, exchange)
+    except Exception as exc:
+        logger.exception("Fatal error in consumer background task: %s", exc)
+        app.state.consumer_ready = False
+        raise exc
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Starting event worker service...")
     app.state.consumer_ready = False
     task = asyncio.create_task(consume(app))
     try:
         yield
     finally:
+        logger.info("Shutting down event worker service...")
         task.cancel()
         with suppress(asyncio.CancelledError):
             await task
@@ -187,6 +244,7 @@ async def lifespan(app: FastAPI):
             await channel.close()
         if connection is not None and not connection.is_closed:
             await connection.close()
+        logger.info("RabbitMQ connections closed, worker shutdown complete")
 
 
 app = FastAPI(
