@@ -82,6 +82,14 @@ jobs:
           helm dependency build deploy/helm/event-platform
           helm lint deploy/helm/event-platform -f deploy/environments/local/values.yaml
           helm template event-platform deploy/helm/event-platform -f deploy/environments/local/values.yaml >/tmp/event-platform.yaml
+      - name: Install Kubeconform
+        run: |
+          KUBECONFORM_VERSION=0.6.7
+          curl -L -s https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+      - name: Validate Kubernetes manifests
+        run: |
+          kubeconform -ignore-missing-resources -summary /tmp/event-platform.yaml
 
   terraform:
     name: terraform-validate
