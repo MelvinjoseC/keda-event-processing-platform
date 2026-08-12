@@ -136,7 +136,7 @@ async def readyz() -> dict[str, str]:
 async def publish_event(event: EventIn) -> EventAccepted:
     event_id = str(uuid.uuid4())
     now = int(time.time())
-    body = {
+    body: dict[str, Any] = {
         "id": event_id,
         "type": event.type,
         "payload": event.payload,
