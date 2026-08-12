@@ -1,0 +1,37 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "event-platform.componentName" (dict "root" . "component" "publisher") }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: publisher
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "event-platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: publisher
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow incoming traffic to FastAPI publisher port 8000
+    - ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    # Allow egress to RabbitMQ (internal EKS service)
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+    # Allow egress to DNS
+    - ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+{{- end }}
