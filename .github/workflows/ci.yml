@@ -28,6 +28,10 @@ jobs:
         run: pip install mypy
       - name: Run Mypy check
         run: mypy --ignore-missing-imports --explicit-package-bases services
+      - name: Install Bandit
+        run: pip install bandit
+      - name: Run Bandit check
+        run: bandit -r services --exclude "**/tests/**"
 
   python:
     name: python-${{ matrix.service }}
