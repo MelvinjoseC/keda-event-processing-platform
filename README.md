@@ -132,6 +132,29 @@ python scripts/cost_compare.py --output reports/cost-comparison.md
 
 The report isolates the worker compute savings. Control plane, NAT, RabbitMQ, monitoring, storage, and network charges remain baseline platform costs.
 
+## Local Observability & Graceful Shutdown
+
+### Graceful Shutdown
+The worker service has been upgraded with a resilient graceful shutdown handler. Upon receipt of a termination signal (like KEDA scaling down or container rotation):
+1. The consumer subscription tag is canceled, instructing RabbitMQ to immediately stop routing new messages to this pod.
+2. The worker waits for all active message-processing tasks to complete (up to a 30-second timeout).
+3. Connections and channels are closed cleanly once processing is finished, ensuring no messages are left partially completed or drop connection before sending their acknowledgement.
+
+### Local Observability
+Prometheus and Grafana containers have been added to the local development environment (`docker-compose.yml`):
+
+1. Launch the local platform and monitoring tools:
+   ```bash
+   docker compose up --build
+   ```
+2. Once running, access the services:
+   - **FastAPI Publisher**: `http://localhost:8000/docs`
+   - **RabbitMQ Management Console**: `http://localhost:15672` (User/Pass: `platform/platform`)
+   - **Prometheus UI**: `http://localhost:9090`
+   - **Grafana UI**: `http://localhost:3000` (User/Pass: `admin/admin`)
+
+Grafana is pre-configured to provision the Prometheus datasource and automatically import the **Event Platform** dashboard. This dashboard visualizes throughput, queue depth, active worker container count, and processing latencies in real time.
+
 ## References
 
 - KEDA RabbitMQ scaler: https://keda.sh/docs/2.20/scalers/rabbitmq-queue/
