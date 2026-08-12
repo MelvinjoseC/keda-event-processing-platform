@@ -51,5 +51,27 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/local-monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+    depends_on:
+      - publisher
+      - worker
+
+  grafana:
+    image: grafana/grafana:11.0.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./infra/local-monitoring/grafana-provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+
 volumes:
   rabbitmq-data:
