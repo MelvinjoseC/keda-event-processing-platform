@@ -1,0 +1,58 @@
+{{- if and .Values.networkPolicy.enabled .Values.rabbitmq.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "event-platform.componentName" (dict "root" . "component" "rabbitmq-policy") }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rabbitmq
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: rabbitmq
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. Allow publisher and worker pods to connect to RabbitMQ AMQP port (5672)
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "event-platform.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5672
+    # 2. Allow management/metrics access (15672)
+    - ports:
+        - protocol: TCP
+          port: 15672
+    # 3. Allow clustering traffic between RabbitMQ replica pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 25672
+  egress:
+    # Allow RabbitMQ cluster nodes to communicate with each other
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 25672
+        - protocol: TCP
+          port: 5672
+    # Allow DNS lookup
+    - ports:
+        - protocol: TCP
+          port: 53
+        - protocol: UDP
+          port: 53
+{{- end }}
