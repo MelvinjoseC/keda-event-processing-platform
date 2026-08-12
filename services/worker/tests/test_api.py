@@ -17,21 +17,8 @@ def mock_rabbitmq():
         mock_queue = MagicMock()
         mock_queue.bind = AsyncMock()
 
-        # Custom iterator class to yield nothing and avoid hanging in lifespan
-        class MockQueueIterator:
-            async def __aenter__(self):
-                return self
-
-            async def __aexit__(self, exc_type, exc_val, exc_tb):
-                pass
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                raise StopAsyncIteration
-
-        mock_queue.iterator = MagicMock(return_value=MockQueueIterator())
+        mock_queue.consume = AsyncMock(return_value="test-consumer-tag")
+        mock_channel.basic_cancel = AsyncMock()
 
         mock_connect.return_value = mock_conn
         mock_conn.channel.return_value = mock_channel
