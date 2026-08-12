@@ -101,3 +101,10 @@ jobs:
           terraform fmt -check -recursive
           terraform init -backend=false
           terraform validate
+      - name: Run Trivy IaC security scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'infra/terraform'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
