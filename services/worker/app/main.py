@@ -73,10 +73,20 @@ PROCESSING_LATENCY = Histogram(
     "worker_processing_seconds",
     "Time spent processing one event",
     ["event_type"],
+    buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
 )
 INFLIGHT_MESSAGES = Gauge(
     "worker_inflight_messages",
     "Messages currently being processed by this worker pod",
+)
+ACTIVE_CONSUMERS = Gauge(
+    "worker_active_consumers",
+    "Active RabbitMQ queue consumer instances on this pod",
+)
+TASK_ERRORS = Counter(
+    "worker_task_errors_total",
+    "Total processing errors encountered by event type and exception class",
+    ["event_type", "error_type"],
 )
 
 
@@ -234,6 +244,7 @@ async def handle_message(
         await process_event(event)
     except Exception as exc:
         duration = time.perf_counter() - started
+        TASK_ERRORS.labels(event_type=event_type, error_type=type(exc).__name__).inc()
         if retry_count < MAX_RETRIES:
             logger.warning(
                 "Error processing event %s of type %s on attempt %d (took %.3fs). Retrying... Error: %r",
@@ -306,6 +317,7 @@ async def consume(app: FastAPI) -> None:
         consumer_tag = await queue.consume(on_message)
         app.state.consumer_tag = consumer_tag
         app.state.consumer_ready = True
+        ACTIVE_CONSUMERS.inc()
         logger.info(
             "RabbitMQ consumer connected, topology declared, consumer tag: %s",
             consumer_tag,
@@ -336,6 +348,7 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down event worker service (graceful)...")
         app.state.is_shutting_down = True
         app.state.consumer_ready = False
+        ACTIVE_CONSUMERS.set(0)
 
         channel = getattr(app.state, "channel", None)
         consumer_tag = getattr(app.state, "consumer_tag", None)

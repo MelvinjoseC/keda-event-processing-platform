@@ -227,3 +227,5 @@ def test_metrics_endpoint(mock_rabbitmq):
         response = client.get("/metrics")
         assert response.status_code == 200
         assert "worker_events_processed_total" in response.text
+        assert "worker_active_consumers" in response.text
+        assert "worker_task_errors_total" in response.text

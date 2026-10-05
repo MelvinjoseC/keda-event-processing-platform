@@ -44,6 +44,7 @@ PUBLISH_ERRORS = Counter(
 PUBLISH_LATENCY = Histogram(
     "publisher_publish_seconds",
     "Time spent publishing events to RabbitMQ",
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
 )
 
 
