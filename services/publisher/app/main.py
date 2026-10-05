@@ -9,10 +9,10 @@ from typing import Any
 import aio_pika
 from aio_pika import DeliveryMode, ExchangeType, Message
 from aio_pika.abc import AbstractChannel, AbstractExchange
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
-from starlette.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 SERVICE_NAME = os.getenv("SERVICE_NAME", "event-publisher")
 
@@ -119,6 +119,22 @@ async def lifespan(app: FastAPI):
         logger.info("RabbitMQ connections closed successfully")
 
 
+class CorrelationIdMiddleware(BaseHTTPMiddleware):
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        correlation_id = (
+            request.headers.get("X-Correlation-ID")
+            or request.headers.get("X-Request-ID")
+            or str(uuid.uuid4())
+        )
+        request.state.correlation_id = correlation_id
+        response = await call_next(request)
+        if "X-Correlation-ID" not in response.headers:
+            response.headers["X-Correlation-ID"] = correlation_id
+        return response
+
+
 app = FastAPI(
     title="Event Publisher",
     version="0.1.0",
@@ -126,6 +142,7 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+app.add_middleware(CorrelationIdMiddleware)
 
 
 @app.get("/healthz", include_in_schema=False)
@@ -142,14 +159,22 @@ async def readyz() -> dict[str, str]:
 
 
 @app.post("/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED)
-async def publish_event(event: EventIn) -> EventAccepted:
+async def publish_event(
+    event: EventIn, request: Request, response: Response
+) -> EventAccepted:
     event_id = str(uuid.uuid4())
+    correlation_id = (
+        event.correlation_id
+        or getattr(request.state, "correlation_id", None)
+        or event_id
+    )
+    response.headers["X-Correlation-ID"] = correlation_id
     now = int(time.time())
     body: dict[str, Any] = {
         "id": event_id,
         "type": event.type,
         "payload": event.payload,
-        "correlation_id": event.correlation_id or event_id,
+        "correlation_id": correlation_id,
         "published_at": now,
     }
 

@@ -79,6 +79,36 @@ def test_publish_event_success(mock_rabbitmq):
         assert response_data["queue"] == "events"
         assert response_data["correlation_id"] == "test-correlation-id"
         assert "id" in response_data
+        assert response.headers["X-Correlation-ID"] == "test-correlation-id"
+
+
+def test_correlation_id_propagated_from_header(mock_rabbitmq):
+    with TestClient(app) as client:
+        event_data = {
+            "type": "order.created",
+            "payload": {"order_id": "12345"},
+        }
+        response = client.post(
+            "/events",
+            json=event_data,
+            headers={"X-Correlation-ID": "header-corr-id"},
+        )
+        assert response.status_code == 202
+        response_data = response.json()
+        assert response_data["correlation_id"] == "header-corr-id"
+        assert response.headers["X-Correlation-ID"] == "header-corr-id"
+
+
+def test_correlation_id_generated_when_omitted(mock_rabbitmq):
+    with TestClient(app) as client:
+        event_data = {
+            "type": "order.created",
+            "payload": {"order_id": "12345"},
+        }
+        response = client.post("/events", json=event_data)
+        assert response.status_code == 202
+        assert "X-Correlation-ID" in response.headers
+        assert response.json()["correlation_id"] == response.headers["X-Correlation-ID"]
 
         # Verify RabbitMQ publish was called
         mock_exchange = mock_rabbitmq["exchange"]
@@ -88,7 +118,7 @@ def test_publish_event_success(mock_rabbitmq):
         body = json.loads(published_msg.body.decode("utf-8"))
         assert body["type"] == "order.created"
         assert body["payload"] == {"order_id": "12345"}
-        assert body["correlation_id"] == "test-correlation-id"
+        assert body["correlation_id"] == response.headers["X-Correlation-ID"]
 
 
 def test_publish_event_failure(mock_rabbitmq):
