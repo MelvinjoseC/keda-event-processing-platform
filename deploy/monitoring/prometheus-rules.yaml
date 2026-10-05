@@ -33,3 +33,35 @@ spec:
           annotations:
             summary: Event queue backlog is high
             description: RabbitMQ queue depth has stayed above 1000 ready messages for more than 10 minutes.
+        - alert: EventPlatformDeadLetterQueueBacklog
+          expr: sum(rabbitmq_queue_messages_ready{namespace="event-platform", queue="events.dead"}) > 0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Messages present in dead-letter queue
+            description: Dead letter queue events.dead has unhandled rejected messages awaiting operator intervention.
+        - alert: EventPlatformHighProcessingLatency
+          expr: histogram_quantile(0.95, sum(rate(worker_processing_seconds_bucket{namespace="event-platform"}[5m])) by (le)) > 2.0
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Worker processing latency is elevated
+            description: The 95th percentile worker processing latency has exceeded 2.0 seconds for more than 5 minutes.
+        - alert: EventPlatformHighRetryRate
+          expr: sum(rate(worker_events_retried_total{namespace="event-platform"}[5m])) / (sum(rate(worker_events_processed_total{namespace="event-platform"}[5m])) + sum(rate(worker_events_retried_total{namespace="event-platform"}[5m])) + 0.001) > 0.2
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High event retry rate detected
+            description: More than 20% of event processing attempts are resulting in retries.
+        - alert: EventPlatformPublisherErrorRate
+          expr: sum(rate(publisher_publish_errors_total{namespace="event-platform"}[5m])) > 0
+          for: 3m
+          labels:
+            severity: critical
+          annotations:
+            summary: Publisher failing to write events to RabbitMQ
+            description: Publisher is encountering errors publishing events to the RabbitMQ broker.
