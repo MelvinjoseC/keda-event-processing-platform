@@ -95,3 +95,24 @@ resource "helm_release" "monitoring" {
     value = var.grafana_admin_password
   }
 }
+
+resource "helm_release" "external_secrets" {
+  count            = var.enable_external_secrets ? 1 : 0
+  name             = "external-secrets"
+  namespace        = "external-secrets"
+  create_namespace = true
+  repository       = "https://charts.external-secrets.io"
+  chart            = "external-secrets"
+  version          = var.external_secrets_chart_version
+  wait             = true
+  timeout          = 600
+
+  values = [
+    yamlencode({
+      installCRDs = true
+      webhook = {
+        port = 9443
+      }
+    })
+  ]
+}

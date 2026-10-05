@@ -33,3 +33,15 @@ variable "grafana_admin_password" {
   sensitive   = true
   default     = "change-me"
 }
+
+variable "enable_external_secrets" {
+  description = "Enable External Secrets Operator for AWS Secrets Manager integration."
+  type        = bool
+  default     = true
+}
+
+variable "external_secrets_chart_version" {
+  description = "Chart version for External Secrets Operator."
+  type        = string
+  default     = "0.10.4"
+}
