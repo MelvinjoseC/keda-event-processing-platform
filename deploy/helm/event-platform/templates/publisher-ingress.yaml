@@ -1,0 +1,44 @@
+{{- if .Values.publisher.ingress.enabled -}}
+{{- $fullName := include "event-platform.componentName" (dict "root" . "component" "publisher") -}}
+{{- $svcPort := .Values.publisher.service.port -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullName }}
+  labels:
+    {{- include "event-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: publisher
+  {{- with .Values.publisher.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.publisher.ingress.className }}
+  ingressClassName: {{ .Values.publisher.ingress.className }}
+  {{- end }}
+  {{- if .Values.publisher.ingress.tls }}
+  tls:
+    {{- range .Values.publisher.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.publisher.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $fullName }}
+                port:
+                  number: {{ $svcPort }}
+          {{- end }}
+    {{- end }}
+{{- end }}

@@ -59,6 +59,16 @@ publisher:
   pdb:
     enabled: true
     minAvailable: 1
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: events.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
   nodeSelector: {}
   tolerations: []
   affinity: {}
