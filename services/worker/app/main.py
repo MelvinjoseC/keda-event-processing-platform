@@ -307,6 +307,17 @@ async def consume(app: FastAPI) -> None:
         app.state.connection = connection
         app.state.channel = channel
 
+        def on_connection_close(sender: Any, exc: BaseException | None = None) -> None:
+            logger.warning("Worker RabbitMQ connection closed: %r", exc)
+            app.state.consumer_ready = False
+
+        def on_connection_reconnect(sender: Any) -> None:
+            logger.info("Worker RabbitMQ connection reconnected successfully")
+            app.state.consumer_ready = True
+
+        connection.close_callbacks.add(on_connection_close)
+        connection.reconnect_callbacks.add(on_connection_reconnect)
+
         async def on_message(message: AbstractIncomingMessage) -> None:
             task = asyncio.create_task(
                 handle_message(message, retry_exchange, dlx_exchange)

@@ -123,6 +123,19 @@ async def lifespan(app: FastAPI):
         PUBLISHER_CONFIRMS,
     )
 
+    app.state.is_ready = True
+
+    def on_connection_close(sender: Any, exc: BaseException | None = None) -> None:
+        logger.warning("RabbitMQ connection closed: %r", exc)
+        app.state.is_ready = False
+
+    def on_connection_reconnect(sender: Any) -> None:
+        logger.info("RabbitMQ connection reconnected successfully")
+        app.state.is_ready = True
+
+    connection.close_callbacks.add(on_connection_close)
+    connection.reconnect_callbacks.add(on_connection_reconnect)
+
     try:
         yield
     except Exception as exc:
@@ -130,6 +143,7 @@ async def lifespan(app: FastAPI):
         raise
     finally:
         logger.info("Shutting down event publisher service...")
+        app.state.is_ready = False
         await channel.close()
         await connection.close()
         logger.info("RabbitMQ connections closed successfully")
@@ -174,7 +188,11 @@ async def healthz() -> dict[str, str]:
 @app.get("/readyz", include_in_schema=False)
 async def readyz() -> dict[str, str]:
     connection = getattr(app.state, "connection", None)
-    if connection is None or connection.is_closed:
+    if (
+        connection is None
+        or connection.is_closed
+        or not getattr(app.state, "is_ready", True)
+    ):
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     return {"status": "ready"}
 

@@ -12,6 +12,8 @@ def mock_rabbitmq():
     with patch("aio_pika.connect_robust") as mock_connect:
         mock_conn = AsyncMock()
         mock_conn.is_closed = False
+        mock_conn.close_callbacks = set()
+        mock_conn.reconnect_callbacks = set()
         mock_channel = AsyncMock()
         mock_exchange = AsyncMock()
         mock_queue = MagicMock()

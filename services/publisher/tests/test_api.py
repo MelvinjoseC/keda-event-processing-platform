@@ -11,6 +11,8 @@ def mock_rabbitmq():
     with patch("aio_pika.connect_robust") as mock_connect:
         mock_conn = AsyncMock()
         mock_conn.is_closed = False
+        mock_conn.close_callbacks = set()
+        mock_conn.reconnect_callbacks = set()
         mock_channel = AsyncMock()
         mock_exchange = AsyncMock()
         mock_queue = AsyncMock()
@@ -61,6 +63,13 @@ def test_readyz_unhealthy_none(mock_rabbitmq):
     # Simulate connection not set
     with TestClient(app) as client:
         app.state.connection = None
+        response = client.get("/readyz")
+        assert response.status_code == 503
+
+
+def test_readyz_unhealthy_state_flag(mock_rabbitmq):
+    with TestClient(app) as client:
+        app.state.is_ready = False
         response = client.get("/readyz")
         assert response.status_code == 503
 
