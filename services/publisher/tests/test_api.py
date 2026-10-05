@@ -166,3 +166,46 @@ def test_publish_event_content_length_header_exceeded(mock_rabbitmq):
             headers={"Content-Length": "9999999"},
         )
         assert response.status_code == 413
+
+
+def test_publish_events_batch_success(mock_rabbitmq):
+    with TestClient(app) as client:
+        batch_data = {
+            "events": [
+                {"type": "order.created", "payload": {"order_id": "1"}},
+                {
+                    "type": "order.created",
+                    "payload": {"order_id": "2"},
+                    "correlation_id": "custom-batch-2",
+                },
+            ]
+        }
+        response = client.post("/events/batch", json=batch_data)
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "accepted"
+        assert data["total"] == 2
+        assert data["accepted"] == 2
+        assert data["failed"] == 0
+        assert len(data["events"]) == 2
+        assert data["events"][1]["correlation_id"] == "custom-batch-2"
+        assert mock_rabbitmq["exchange"].publish.call_count == 2
+
+
+def test_publish_events_batch_empty_rejected(mock_rabbitmq):
+    with TestClient(app) as client:
+        response = client.post("/events/batch", json={"events": []})
+        assert response.status_code == 422
+
+
+def test_publish_events_batch_all_failed(mock_rabbitmq):
+    mock_rabbitmq["exchange"].publish.side_effect = Exception("Broker down")
+    with TestClient(app) as client:
+        batch_data = {
+            "events": [
+                {"type": "order.created", "payload": {"order_id": "1"}},
+            ]
+        }
+        response = client.post("/events/batch", json=batch_data)
+        assert response.status_code == 503
+        assert "Failed to publish" in response.json()["detail"]

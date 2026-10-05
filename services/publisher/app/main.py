@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -62,6 +63,24 @@ class EventAccepted(BaseModel):
     status: str
     queue: str
     correlation_id: str | None
+
+
+class BatchEventsIn(BaseModel):
+    events: list[EventIn] = Field(min_length=1, max_length=100)
+
+
+class BatchEventItem(BaseModel):
+    id: str
+    type: str
+    correlation_id: str
+
+
+class BatchEventsResponse(BaseModel):
+    status: str
+    total: int
+    accepted: int
+    failed: int
+    events: list[BatchEventItem]
 
 
 async def declare_topology(channel: AbstractChannel) -> AbstractExchange:
@@ -159,24 +178,13 @@ async def readyz() -> dict[str, str]:
     return {"status": "ready"}
 
 
-@app.post("/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED)
-async def publish_event(
-    event: EventIn, request: Request, response: Response
-) -> EventAccepted:
+async def _publish_single_event(
+    exchange: AbstractExchange,
+    event: EventIn,
+    fallback_correlation_id: str | None = None,
+) -> BatchEventItem:
     event_id = str(uuid.uuid4())
-    correlation_id = (
-        event.correlation_id
-        or getattr(request.state, "correlation_id", None)
-        or event_id
-    )
-    response.headers["X-Correlation-ID"] = correlation_id
-    content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_PAYLOAD_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Request size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
-        )
-
+    correlation_id = event.correlation_id or fallback_correlation_id or event_id
     now = int(time.time())
     body: dict[str, Any] = {
         "id": event_id,
@@ -185,12 +193,11 @@ async def publish_event(
         "correlation_id": correlation_id,
         "published_at": now,
     }
-
     body_bytes = json.dumps(body, separators=(",", ":")).encode("utf-8")
     if len(body_bytes) > MAX_PAYLOAD_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Serialized event size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
+            detail=f"Event {event_id} size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
         )
 
     message = Message(
@@ -198,47 +205,126 @@ async def publish_event(
         content_type="application/json",
         delivery_mode=DeliveryMode.PERSISTENT,
         message_id=event_id,
-        correlation_id=body["correlation_id"],
+        correlation_id=correlation_id,
         timestamp=now,
         headers={"event_type": event.type},
     )
 
-    exchange = getattr(app.state, "exchange", None)
-    if exchange is None:
-        PUBLISH_ERRORS.inc()
-        logger.error(
-            "Failed to publish event %s: RabbitMQ exchange is not ready", event_id
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="RabbitMQ exchange is not ready",
-        )
-
-    try:
-        with PUBLISH_LATENCY.time():
-            await exchange.publish(message, routing_key=ROUTING_KEY)
-    except Exception as exc:
-        PUBLISH_ERRORS.inc()
-        logger.exception(
-            "Failed to publish event %s of type %s to RabbitMQ", event_id, event.type
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Failed to publish event",
-        ) from exc
+    with PUBLISH_LATENCY.time():
+        await exchange.publish(message, routing_key=ROUTING_KEY)
 
     PUBLISHED_EVENTS.labels(event_type=event.type).inc()
     logger.info(
         "Published event: id=%s, type=%s, correlation_id=%s",
         event_id,
         event.type,
-        body["correlation_id"],
+        correlation_id,
     )
+    return BatchEventItem(id=event_id, type=event.type, correlation_id=correlation_id)
+
+
+@app.post("/events", response_model=EventAccepted, status_code=status.HTTP_202_ACCEPTED)
+async def publish_event(
+    event: EventIn, request: Request, response: Response
+) -> EventAccepted:
+    exchange = getattr(app.state, "exchange", None)
+    if exchange is None:
+        PUBLISH_ERRORS.inc()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RabbitMQ exchange is not ready",
+        )
+
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_PAYLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Request size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
+        )
+
+    correlation_id = (
+        event.correlation_id
+        or getattr(request.state, "correlation_id", None)
+        or str(uuid.uuid4())
+    )
+    response.headers["X-Correlation-ID"] = correlation_id
+
+    try:
+        item = await _publish_single_event(
+            exchange, event, fallback_correlation_id=correlation_id
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        PUBLISH_ERRORS.inc()
+        logger.exception("Failed to publish event %s to RabbitMQ", event.type)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to publish event",
+        ) from exc
+
     return EventAccepted(
-        id=event_id,
+        id=item.id,
         status="accepted",
         queue=QUEUE_NAME,
-        correlation_id=body["correlation_id"],
+        correlation_id=item.correlation_id,
+    )
+
+
+@app.post(
+    "/events/batch",
+    response_model=BatchEventsResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def publish_events_batch(
+    batch: BatchEventsIn, request: Request, response: Response
+) -> BatchEventsResponse:
+    exchange = getattr(app.state, "exchange", None)
+    if exchange is None:
+        PUBLISH_ERRORS.inc()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="RabbitMQ exchange is not ready",
+        )
+
+    correlation_id = getattr(request.state, "correlation_id", None) or str(uuid.uuid4())
+    response.headers["X-Correlation-ID"] = correlation_id
+
+    tasks = [
+        _publish_single_event(exchange, ev, fallback_correlation_id=correlation_id)
+        for ev in batch.events
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    accepted_items: list[BatchEventItem] = []
+    failed_count = 0
+    for res in results:
+        if isinstance(res, BaseException):
+            failed_count += 1
+            PUBLISH_ERRORS.inc()
+            logger.error("Failed to publish an event in batch: %r", res)
+        elif isinstance(res, BatchEventItem):
+            accepted_items.append(res)
+
+    if failed_count == len(batch.events):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to publish batch events to RabbitMQ",
+        )
+
+    logger.info(
+        "Published batch events: total=%d, accepted=%d, failed=%d, correlation_id=%s",
+        len(batch.events),
+        len(accepted_items),
+        failed_count,
+        correlation_id,
+    )
+    return BatchEventsResponse(
+        status="accepted" if failed_count == 0 else "partial",
+        total=len(batch.events),
+        accepted=len(accepted_items),
+        failed=failed_count,
+        events=accepted_items,
     )
 
 
