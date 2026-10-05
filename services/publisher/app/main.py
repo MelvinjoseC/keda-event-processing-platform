@@ -29,6 +29,11 @@ ROUTING_KEY = os.getenv("ROUTING_KEY", "events.created")
 DEAD_LETTER_EXCHANGE = os.getenv("DEAD_LETTER_EXCHANGE", "events.dlx")
 DEAD_LETTER_QUEUE = os.getenv("DEAD_LETTER_QUEUE", "events.dead")
 DEAD_LETTER_ROUTING_KEY = os.getenv("DEAD_LETTER_ROUTING_KEY", "events.dead")
+PUBLISHER_CONFIRMS = os.getenv("PUBLISHER_CONFIRMS", "true").lower() in (
+    "true",
+    "1",
+    "yes",
+)
 
 PUBLISHED_EVENTS = Counter(
     "publisher_events_published_total",
@@ -90,14 +95,17 @@ async def lifespan(app: FastAPI):
         RABBITMQ_URL,
         client_properties={"connection_name": SERVICE_NAME},
     )
-    channel = await connection.channel()
+    channel = await connection.channel(publisher_confirms=PUBLISHER_CONFIRMS)
     await channel.set_qos(prefetch_count=10)
     exchange = await declare_topology(channel)
 
     app.state.connection = connection
     app.state.channel = channel
     app.state.exchange = exchange
-    logger.info("Connected to RabbitMQ and declared event topology")
+    logger.info(
+        "Connected to RabbitMQ (publisher_confirms=%s) and declared event topology",
+        PUBLISHER_CONFIRMS,
+    )
 
     try:
         yield

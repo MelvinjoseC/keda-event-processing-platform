@@ -44,6 +44,11 @@ def test_readyz_healthy(mock_rabbitmq):
         assert response.json() == {"status": "ready"}
 
 
+def test_publisher_confirms_initialized(mock_rabbitmq):
+    with TestClient(app):
+        mock_rabbitmq["connection"].channel.assert_called_with(publisher_confirms=True)
+
+
 def test_readyz_unhealthy_closed(mock_rabbitmq):
     # Set connection to closed
     mock_rabbitmq["connection"].is_closed = True
