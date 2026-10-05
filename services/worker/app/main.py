@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import os
 import time
 from contextlib import asynccontextmanager, suppress
@@ -24,14 +23,10 @@ from prometheus_client import (
 )
 from starlette.responses import Response
 
-SERVICE_NAME = os.getenv("SERVICE_NAME", "event-worker")
+from app.logging_config import configure_logging, current_correlation_id
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(SERVICE_NAME)
+SERVICE_NAME = os.getenv("SERVICE_NAME", "event-worker")
+logger = configure_logging(SERVICE_NAME)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "events")
 EXCHANGE_NAME = os.getenv("EXCHANGE_NAME", "events")
@@ -222,15 +217,18 @@ async def handle_message(
 
     INFLIGHT_MESSAGES.inc()
     started = time.perf_counter()
+    token = current_correlation_id.set(message.correlation_id or event_id)
     try:
         event = decode_event(message.body)
         event_type = event["type"]
         event_id = event["id"]
+        cid = event.get("correlation_id") or message.correlation_id or event_id
+        current_correlation_id.set(cid)
         logger.info(
             "Processing event: id=%s, type=%s, correlation_id=%s, attempt=%d",
             event_id,
             event_type,
-            event.get("correlation_id"),
+            cid,
             retry_count + 1,
         )
         await process_event(event)
@@ -279,6 +277,7 @@ async def handle_message(
             time.perf_counter() - started
         )
         INFLIGHT_MESSAGES.dec()
+        current_correlation_id.reset(token)
 
 
 async def consume(app: FastAPI) -> None:

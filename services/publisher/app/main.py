@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import os
 import time
 import uuid
@@ -15,14 +14,10 @@ from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
-SERVICE_NAME = os.getenv("SERVICE_NAME", "event-publisher")
+from app.logging_config import configure_logging, current_correlation_id
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger(SERVICE_NAME)
+SERVICE_NAME = os.getenv("SERVICE_NAME", "event-publisher")
+logger = configure_logging(SERVICE_NAME)
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "events")
 EXCHANGE_NAME = os.getenv("EXCHANGE_NAME", "events")
@@ -149,7 +144,12 @@ class CorrelationIdMiddleware(BaseHTTPMiddleware):
             or str(uuid.uuid4())
         )
         request.state.correlation_id = correlation_id
-        response = await call_next(request)
+        token = current_correlation_id.set(correlation_id)
+        try:
+            response = await call_next(request)
+        finally:
+            current_correlation_id.reset(token)
+
         if "X-Correlation-ID" not in response.headers:
             response.headers["X-Correlation-ID"] = correlation_id
         return response
