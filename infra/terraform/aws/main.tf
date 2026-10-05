@@ -44,6 +44,12 @@ module "vpc" {
   single_nat_gateway     = var.single_nat_gateway
   one_nat_gateway_per_az = !var.single_nat_gateway
 
+  enable_flow_log                                 = var.enable_flow_log
+  create_flow_log_cloudwatch_log_group            = var.enable_flow_log
+  create_flow_log_cloudwatch_iam_role             = var.enable_flow_log
+  flow_log_max_aggregation_interval               = 60
+  flow_log_cloudwatch_log_group_retention_in_days = var.flow_log_retention_days
+
   public_subnet_tags = {
     "kubernetes.io/role/elb" = "1"
   }

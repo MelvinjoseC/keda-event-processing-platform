@@ -52,6 +52,18 @@ variable "single_nat_gateway" {
   default     = false
 }
 
+variable "enable_flow_log" {
+  description = "Enable VPC flow logs for network monitoring and audit compliance."
+  type        = bool
+  default     = true
+}
+
+variable "flow_log_retention_days" {
+  description = "Days of retention for CloudWatch VPC flow logs."
+  type        = number
+  default     = 30
+}
+
 variable "enable_eks_auto_mode" {
   description = "Use EKS Auto Mode node pools so empty worker capacity can be reclaimed after KEDA scales pods to zero."
   type        = bool
