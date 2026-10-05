@@ -112,6 +112,8 @@ module "eks" {
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
   deletion_protection                      = true
+  create_kms_key                           = false
+  kms_key_arn                              = aws_kms_key.platform.arn
 
   enabled_log_types = [
     "api",
@@ -174,6 +176,19 @@ module "eks" {
   }
 }
 
+resource "aws_kms_key" "platform" {
+  description             = "KMS Customer Managed Key for ${local.name} EKS and ECR encryption"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = local.tags
+}
+
+resource "aws_kms_alias" "platform" {
+  name          = "alias/${local.name}"
+  target_key_id = aws_kms_key.platform.key_id
+}
+
 resource "aws_ecr_repository" "services" {
   for_each = local.service_repositories
 
@@ -181,7 +196,8 @@ resource "aws_ecr_repository" "services" {
   image_tag_mutability = "IMMUTABLE"
 
   encryption_configuration {
-    encryption_type = "AES256"
+    encryption_type = "KMS"
+    kms_key         = aws_kms_key.platform.arn
   }
 
   image_scanning_configuration {

@@ -37,3 +37,8 @@ output "kubectl_update_command" {
   description = "Command to configure kubectl for this cluster."
   value       = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
 }
+
+output "kms_key_arn" {
+  description = "KMS Customer Managed Key ARN for EKS and ECR."
+  value       = aws_kms_key.platform.arn
+}
