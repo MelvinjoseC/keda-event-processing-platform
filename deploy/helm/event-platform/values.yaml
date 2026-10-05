@@ -59,6 +59,7 @@ publisher:
   pdb:
     enabled: true
     minAvailable: 1
+  terminationGracePeriodSeconds: 30
   ingress:
     enabled: false
     className: ""
@@ -86,6 +87,7 @@ worker:
     PROCESS_SECONDS: "0.15"
     PREFETCH_COUNT: "10"
     MAX_RETRIES: "3"
+  terminationGracePeriodSeconds: 60
   resources:
     requests:
       cpu: 500m

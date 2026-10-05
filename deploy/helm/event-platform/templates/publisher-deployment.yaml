@@ -23,6 +23,7 @@ spec:
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- end }}
     spec:
+      terminationGracePeriodSeconds: {{ .Values.publisher.terminationGracePeriodSeconds | default 30 }}
       serviceAccountName: {{ include "event-platform.serviceAccountName" . }}
       automountServiceAccountToken: false
       securityContext:
@@ -37,6 +38,10 @@ spec:
           imagePullPolicy: {{ .Values.publisher.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]
           ports:
             - name: http
               containerPort: 8000
