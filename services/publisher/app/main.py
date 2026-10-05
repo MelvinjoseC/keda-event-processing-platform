@@ -34,6 +34,7 @@ PUBLISHER_CONFIRMS = os.getenv("PUBLISHER_CONFIRMS", "true").lower() in (
     "1",
     "yes",
 )
+MAX_PAYLOAD_BYTES = int(os.getenv("MAX_PAYLOAD_BYTES", "262144"))  # 256 KiB default
 
 PUBLISHED_EVENTS = Counter(
     "publisher_events_published_total",
@@ -169,6 +170,13 @@ async def publish_event(
         or event_id
     )
     response.headers["X-Correlation-ID"] = correlation_id
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_PAYLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Request size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
+        )
+
     now = int(time.time())
     body: dict[str, Any] = {
         "id": event_id,
@@ -178,8 +186,15 @@ async def publish_event(
         "published_at": now,
     }
 
+    body_bytes = json.dumps(body, separators=(",", ":")).encode("utf-8")
+    if len(body_bytes) > MAX_PAYLOAD_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Serialized event size exceeds limit of {MAX_PAYLOAD_BYTES} bytes",
+        )
+
     message = Message(
-        body=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+        body=body_bytes,
         content_type="application/json",
         delivery_mode=DeliveryMode.PERSISTENT,
         message_id=event_id,

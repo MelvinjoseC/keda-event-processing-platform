@@ -139,3 +139,30 @@ def test_metrics_endpoint(mock_rabbitmq):
         response = client.get("/metrics")
         assert response.status_code == 200
         assert "publisher_events_published_total" in response.text
+
+
+def test_publish_event_payload_too_large(mock_rabbitmq):
+    with TestClient(app) as client:
+        # Generate payload larger than 256 KiB
+        large_payload = {"data": "x" * 300000}
+        event_data = {
+            "type": "large.event",
+            "payload": large_payload,
+        }
+        response = client.post("/events", json=event_data)
+        assert response.status_code == 413
+        assert "exceeds limit" in response.json()["detail"]
+
+
+def test_publish_event_content_length_header_exceeded(mock_rabbitmq):
+    with TestClient(app) as client:
+        event_data = {
+            "type": "order.created",
+            "payload": {"key": "val"},
+        }
+        response = client.post(
+            "/events",
+            json=event_data,
+            headers={"Content-Length": "9999999"},
+        )
+        assert response.status_code == 413
