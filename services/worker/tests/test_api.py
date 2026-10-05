@@ -3,7 +3,7 @@ import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from app.main import app, handle_message
+from app.main import app, calculate_retry_delay_ms, handle_message
 from fastapi.testclient import TestClient
 
 
@@ -147,9 +147,18 @@ def test_handle_message_retry_trigger(mock_rabbitmq):
         publish_args = exchange.publish.call_args
         published_msg = publish_args[0][0]
         assert published_msg.headers["x-retry-count"] == 1
+        assert published_msg.headers["x-retry-delay-ms"] == 10000
+        assert published_msg.expiration == 10.0
         assert publish_args[1].get("routing_key") == "events.retry"
 
     asyncio.run(run())
+
+
+def test_calculate_retry_delay_ms():
+    # Base delay: 1000ms, factor 2.0
+    assert calculate_retry_delay_ms(1, base_delay_ms=1000, factor=2.0) == 1000
+    assert calculate_retry_delay_ms(2, base_delay_ms=1000, factor=2.0) == 2000
+    assert calculate_retry_delay_ms(3, base_delay_ms=1000, factor=2.0) == 4000
 
 
 def test_handle_message_retry_exhausted(mock_rabbitmq):

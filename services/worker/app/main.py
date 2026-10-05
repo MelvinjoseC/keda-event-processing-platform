@@ -47,6 +47,17 @@ RETRY_EXCHANGE = os.getenv("RETRY_EXCHANGE", "events.retry.dx")
 RETRY_QUEUE = os.getenv("RETRY_QUEUE", "events.retry")
 RETRY_ROUTING_KEY = os.getenv("RETRY_ROUTING_KEY", "events.retry")
 RETRY_DELAY_MS = int(os.getenv("RETRY_DELAY_MS", "10000"))
+RETRY_BACKOFF_FACTOR = float(os.getenv("RETRY_BACKOFF_FACTOR", "2.0"))
+
+
+def calculate_retry_delay_ms(
+    retry_count: int,
+    base_delay_ms: int = RETRY_DELAY_MS,
+    factor: float = RETRY_BACKOFF_FACTOR,
+) -> int:
+    multiplier = factor ** max(0, retry_count - 1)
+    return int(base_delay_ms * multiplier)
+
 
 PROCESSED_EVENTS = Counter(
     "worker_events_processed_total",
@@ -140,14 +151,17 @@ async def republish_for_retry(
     original: AbstractIncomingMessage,
     retry_count: int,
 ) -> None:
+    delay_ms = calculate_retry_delay_ms(retry_count)
     logger.info(
-        "Republishing message %s to retry exchange (%d/%d)",
+        "Republishing message %s to retry exchange (%d/%d) with %dms backoff delay",
         original.message_id,
         retry_count,
         MAX_RETRIES,
+        delay_ms,
     )
     headers = dict(original.headers or {})
     headers["x-retry-count"] = retry_count
+    headers["x-retry-delay-ms"] = delay_ms
 
     await retry_exchange.publish(
         Message(
@@ -157,6 +171,7 @@ async def republish_for_retry(
             message_id=original.message_id,
             correlation_id=original.correlation_id,
             timestamp=int(time.time()),
+            expiration=delay_ms / 1000.0,
             headers=headers,
         ),
         routing_key=RETRY_ROUTING_KEY,
