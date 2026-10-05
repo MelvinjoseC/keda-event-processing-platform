@@ -184,6 +184,87 @@ data:
           ],
           "title": "Retries and Dead Letters",
           "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 16
+          },
+          "id": 5,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(rabbitmq_queue_messages_ready{namespace=\"event-platform\", queue=~\"events\\\\.(dead|retry)\"}) by (queue)",
+              "legendFormat": "{{queue}}",
+              "refId": "A"
+            }
+          ],
+          "title": "DLQ and Retry Queue Backlog",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 16
+          },
+          "id": 6,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "targets": [
+            {
+              "expr": "sum(worker_inflight_messages{namespace=\"event-platform\"})",
+              "legendFormat": "inflight messages",
+              "refId": "A"
+            },
+            {
+              "expr": "sum(worker_active_consumers{namespace=\"event-platform\"})",
+              "legendFormat": "active consumers",
+              "refId": "B"
+            }
+          ],
+          "title": "Inflight Tasks and Active Consumers",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",
