@@ -163,9 +163,42 @@ async def republish_for_retry(
     )
 
 
+async def republish_to_dlq(
+    dlx_exchange: AbstractExchange,
+    original: AbstractIncomingMessage,
+    error: Exception,
+    retry_count: int,
+) -> None:
+    logger.info(
+        "Republishing message %s to DLQ exchange (%s) with diagnostic metadata",
+        original.message_id,
+        DEAD_LETTER_ROUTING_KEY,
+    )
+    headers = dict(original.headers or {})
+    headers["x-dead-letter-reason"] = type(error).__name__
+    headers["x-dead-letter-error"] = str(error)[:500]
+    headers["x-failed-worker"] = os.getenv("HOSTNAME", SERVICE_NAME)
+    headers["x-failed-at"] = int(time.time())
+    headers["x-retry-count"] = retry_count
+
+    await dlx_exchange.publish(
+        Message(
+            body=original.body,
+            content_type=original.content_type,
+            delivery_mode=DeliveryMode.PERSISTENT,
+            message_id=original.message_id,
+            correlation_id=original.correlation_id,
+            timestamp=int(time.time()),
+            headers=headers,
+        ),
+        routing_key=DEAD_LETTER_ROUTING_KEY,
+    )
+
+
 async def handle_message(
     message: AbstractIncomingMessage,
     retry_exchange: AbstractExchange,
+    dlx_exchange: AbstractExchange | None = None,
 ) -> None:
     raw_retry = (message.headers or {}).get("x-retry-count", 0)
     retry_count = int(str(raw_retry)) if raw_retry is not None else 0
@@ -210,7 +243,11 @@ async def handle_message(
                 exc,
                 exc_info=True,
             )
-            await message.reject(requeue=False)
+            if dlx_exchange is not None:
+                await republish_to_dlq(dlx_exchange, message, exc, retry_count)
+                await message.ack()
+            else:
+                await message.reject(requeue=False)
             FAILED_EVENTS.labels(event_type=event_type).inc()
     else:
         duration = time.perf_counter() - started
@@ -240,12 +277,15 @@ async def consume(app: FastAPI) -> None:
         await channel.set_qos(prefetch_count=PREFETCH_COUNT)
         queue = await declare_topology(channel)
         retry_exchange = await channel.get_exchange(RETRY_EXCHANGE)
+        dlx_exchange = await channel.get_exchange(DEAD_LETTER_EXCHANGE)
 
         app.state.connection = connection
         app.state.channel = channel
 
         async def on_message(message: AbstractIncomingMessage) -> None:
-            task = asyncio.create_task(handle_message(message, retry_exchange))
+            task = asyncio.create_task(
+                handle_message(message, retry_exchange, dlx_exchange)
+            )
             app.state.active_tasks.add(task)
             task.add_done_callback(app.state.active_tasks.discard)
 

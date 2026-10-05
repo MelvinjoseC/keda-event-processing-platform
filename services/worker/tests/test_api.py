@@ -179,6 +179,40 @@ def test_handle_message_retry_exhausted(mock_rabbitmq):
     asyncio.run(run())
 
 
+def test_handle_message_retry_exhausted_with_dlx_enrichment(mock_rabbitmq):
+    async def run():
+        message = AsyncMock()
+        message.body = json.dumps(
+            {
+                "id": "event-123",
+                "type": "order.created",
+                "payload": {"force_error": True},
+            }
+        ).encode("utf-8")
+        message.message_id = "event-123"
+        message.correlation_id = "corr-123"
+        message.headers = {"x-retry-count": 3}
+
+        retry_exchange = mock_rabbitmq["exchange"]
+        dlx_exchange = AsyncMock()
+
+        await handle_message(message, retry_exchange, dlx_exchange)
+
+        # Message must be acknowledged and published to DLX with enriched diagnostics
+        message.ack.assert_called_once()
+        message.reject.assert_not_called()
+        dlx_exchange.publish.assert_called_once()
+
+        published_msg = dlx_exchange.publish.call_args[0][0]
+        assert published_msg.headers["x-dead-letter-reason"] == "RuntimeError"
+        assert "forced processing error" in published_msg.headers["x-dead-letter-error"]
+        assert published_msg.headers["x-retry-count"] == 3
+        assert "x-failed-worker" in published_msg.headers
+        assert dlx_exchange.publish.call_args[1].get("routing_key") == "events.dead"
+
+    asyncio.run(run())
+
+
 def test_metrics_endpoint(mock_rabbitmq):
     with TestClient(app) as client:
         response = client.get("/metrics")
