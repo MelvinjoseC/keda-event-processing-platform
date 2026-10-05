@@ -7,7 +7,8 @@ local-down:
 	docker compose down --volumes
 
 test:
-	python -m compileall services scripts
+	python -m compileall services scripts tests
+	pytest tests/integration
 
 lint:
 	ruff check .
