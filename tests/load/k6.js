@@ -24,31 +24,87 @@ const eventTypes = [
   "order.created",
   "order.paid",
   "shipment.requested",
-  "inventory.adjusted"
+  "inventory.adjusted",
+  "notification.dispatched"
 ];
 
-export default function () {
-  const id = uuidv4();
-  const response = http.post(
-    `${__ENV.BASE_URL || "http://localhost:8000"}/events`,
-    JSON.stringify({
-      type: randomItem(eventTypes),
-      correlation_id: id,
-      payload: {
-        id,
-        source: "k6",
-        amount: Math.floor(Math.random() * 5000)
-      }
-    }),
-    {
-      headers: {
-        "content-type": "application/json"
-      }
-    }
-  );
+const errorInjectionRate = parseFloat(__ENV.ERROR_INJECTION_RATE || "0.02");
 
-  check(response, {
-    "accepted": (r) => r.status === 202
-  });
+export default function () {
+  const isBatch = Math.random() < 0.25; // 25% batch requests, 75% single requests
+  const baseUrl = __ENV.BASE_URL || "http://localhost:8000";
+
+  if (isBatch) {
+    const batchSize = Math.floor(Math.random() * 6) + 5; // 5 to 10 items
+    const batchId = uuidv4();
+    const events = [];
+
+    for (let i = 0; i < batchSize; i++) {
+      const id = uuidv4();
+      const shouldFail = Math.random() < errorInjectionRate;
+      events.push({
+        type: randomItem(eventTypes),
+        correlation_id: id,
+        payload: {
+          id: id,
+          batch_id: batchId,
+          source: "k6-batch",
+          amount: Math.floor(Math.random() * 5000),
+          force_error: shouldFail
+        }
+      });
+    }
+
+    const batchRes = http.post(
+      `${baseUrl}/events/batch`,
+      JSON.stringify({ events: events }),
+      {
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": batchId
+        }
+      }
+    );
+
+    check(batchRes, {
+      "batch accepted (202)": (r) => r.status === 202,
+      "batch count matches": (r) => {
+        try {
+          const body = JSON.parse(r.body);
+          return body.published === batchSize;
+        } catch (_) {
+          return false;
+        }
+      }
+    });
+  } else {
+    const id = uuidv4();
+    const shouldFail = Math.random() < errorInjectionRate;
+
+    const res = http.post(
+      `${baseUrl}/events`,
+      JSON.stringify({
+        type: randomItem(eventTypes),
+        correlation_id: id,
+        payload: {
+          id: id,
+          source: "k6-single",
+          amount: Math.floor(Math.random() * 5000),
+          force_error: shouldFail
+        }
+      }),
+      {
+        headers: {
+          "content-type": "application/json",
+          "x-correlation-id": id
+        }
+      }
+    );
+
+    check(res, {
+      "single accepted (202)": (r) => r.status === 202
+    });
+  }
+
   sleep(0.1);
 }
