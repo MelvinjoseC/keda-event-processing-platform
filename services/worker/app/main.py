@@ -8,6 +8,12 @@ from typing import Any
 
 import aio_pika
 from aio_pika import DeliveryMode, ExchangeType, Message
+from aio_pika.abc import (
+    AbstractChannel,
+    AbstractExchange,
+    AbstractIncomingMessage,
+    AbstractQueue,
+)
 from fastapi import FastAPI, HTTPException, status
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -79,7 +85,7 @@ def decode_event(body: bytes) -> dict[str, Any]:
     return payload
 
 
-async def declare_topology(channel: aio_pika.RobustChannel) -> aio_pika.RobustQueue:
+async def declare_topology(channel: AbstractChannel) -> AbstractQueue:
     dlx = await channel.declare_exchange(
         DEAD_LETTER_EXCHANGE,
         ExchangeType.DIRECT,
@@ -130,8 +136,8 @@ async def process_event(event: dict[str, Any]) -> None:
 
 
 async def republish_for_retry(
-    retry_exchange: aio_pika.RobustExchange,
-    original: aio_pika.IncomingMessage,
+    retry_exchange: AbstractExchange,
+    original: AbstractIncomingMessage,
     retry_count: int,
 ) -> None:
     logger.info(
@@ -158,10 +164,11 @@ async def republish_for_retry(
 
 
 async def handle_message(
-    message: aio_pika.IncomingMessage,
-    retry_exchange: aio_pika.RobustExchange,
+    message: AbstractIncomingMessage,
+    retry_exchange: AbstractExchange,
 ) -> None:
-    retry_count = int((message.headers or {}).get("x-retry-count", 0))
+    raw_retry = (message.headers or {}).get("x-retry-count", 0)
+    retry_count = int(str(raw_retry)) if raw_retry is not None else 0
     event_type = "unknown"
     event_id = message.message_id or "unknown"
 
@@ -236,8 +243,8 @@ async def consume(app: FastAPI) -> None:
 
         app.state.connection = connection
         app.state.channel = channel
-        
-        async def on_message(message: aio_pika.IncomingMessage):
+
+        async def on_message(message: AbstractIncomingMessage) -> None:
             task = asyncio.create_task(handle_message(message, retry_exchange))
             app.state.active_tasks.add(task)
             task.add_done_callback(app.state.active_tasks.discard)
@@ -252,7 +259,7 @@ async def consume(app: FastAPI) -> None:
 
         while not app.state.is_shutting_down:
             await asyncio.sleep(0.5)
-            
+
     except Exception as exc:
         logger.exception("Fatal error in consumer background task: %s", exc)
         app.state.consumer_ready = False
@@ -266,7 +273,7 @@ async def lifespan(app: FastAPI):
     app.state.is_shutting_down = False
     app.state.active_tasks = set()
     app.state.consumer_tag = None
-    
+
     task = asyncio.create_task(consume(app))
     app.state.consumer_task = task
     try:
@@ -275,17 +282,19 @@ async def lifespan(app: FastAPI):
         logger.info("Shutting down event worker service (graceful)...")
         app.state.is_shutting_down = True
         app.state.consumer_ready = False
-        
+
         channel = getattr(app.state, "channel", None)
         consumer_tag = getattr(app.state, "consumer_tag", None)
         if channel is not None and consumer_tag is not None and not channel.is_closed:
-            logger.info("Canceling consumer tag %s to stop receiving new messages", consumer_tag)
+            logger.info(
+                "Canceling consumer tag %s to stop receiving new messages", consumer_tag
+            )
             try:
                 await channel.basic_cancel(consumer_tag)
             except Exception as exc:
                 logger.warning("Failed to cancel consumer: %r", exc)
 
-        active_tasks = getattr(app.state, "active_tasks", set())
+        active_tasks: set[asyncio.Task[Any]] = getattr(app.state, "active_tasks", set())
         if active_tasks:
             logger.info("Waiting for %d active tasks to complete...", len(active_tasks))
             try:
@@ -294,7 +303,7 @@ async def lifespan(app: FastAPI):
                     timeout=30.0,
                 )
                 logger.info("All active tasks completed")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Timeout reached. Forcing cancellation of active tasks.")
                 for active_task in active_tasks:
                     active_task.cancel()

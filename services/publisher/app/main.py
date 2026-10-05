@@ -8,6 +8,7 @@ from typing import Any
 
 import aio_pika
 from aio_pika import DeliveryMode, ExchangeType, Message
+from aio_pika.abc import AbstractChannel, AbstractExchange
 from fastapi import FastAPI, HTTPException, status
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel, Field
@@ -57,7 +58,7 @@ class EventAccepted(BaseModel):
     correlation_id: str | None
 
 
-async def declare_topology(channel: aio_pika.RobustChannel) -> aio_pika.RobustExchange:
+async def declare_topology(channel: AbstractChannel) -> AbstractExchange:
     dlx = await channel.declare_exchange(
         DEAD_LETTER_EXCHANGE,
         ExchangeType.DIRECT,
